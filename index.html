@@ -56,7 +56,10 @@
                 <div class="page" id="ordersPage">
                     <div class="orders-header">
                         <h2>已点菜品</h2>
-                        <button class="clear-orders-btn" id="clearOrdersBtn">清空记录</button>
+                        <div class="header-actions">
+                            <button class="share-link-btn" id="shareLinkBtn">分享点餐链接</button>
+                            <button class="clear-orders-btn" id="clearOrdersBtn">清空记录</button>
+                        </div>
                     </div>
                     <div class="empty-state" id="ordersEmpty">
                         <div class="empty-icon">📝</div>
@@ -90,6 +93,8 @@
         </nav>
     </div>
 
+    <!-- 引入 Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
 </body>
 </html>

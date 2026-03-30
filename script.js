@@ -1,3 +1,29 @@
+// Supabase 配置
+const SUPABASE_URL = 'https://aeihcgfxroeksyiraqmz.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_iplBVpLsu7cO8nsfMGCweA_HkPyC2Us';
+
+// 初始化 Supabase 客户端
+const { createClient } = supabase;
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// 生成或获取唯一用户 ID
+// 从 URL 参数中获取共享 ID（如果有的话）
+const urlParams = new URLSearchParams(window.location.search);
+let sharedUserId = urlParams.get('sharedId');
+
+// 如果有共享 ID，使用共享 ID；否则使用本地存储的 ID
+let userId = sharedUserId || localStorage.getItem('tianjin_user_id');
+if (!userId) {
+    userId = 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem('tianjin_user_id', userId);
+}
+
+// 生成共享链接的函数
+function generateShareLink() {
+    const baseUrl = window.location.href.split('?')[0];
+    return `${baseUrl}?sharedId=${userId}`;
+}
+
 const categories = [
     { id: 'all', name: '全部' },
     { id: 'cold', name: '凉菜' },
@@ -48,7 +74,7 @@ const dishesData = [
     { id: 38, name: '西红柿炒鸡蛋', price: 26, category: 'hot', desc: '酸甜可口，营养丰富，家常小炒' },
     { id: 39, name: '酸辣土豆丝', price: 24, category: 'hot', desc: '酸辣爽口，土豆丝脆，开胃小菜' },
     { id: 40, name: '鱼香茄子', price: 32, category: 'hot', desc: '茄子软烂，鱼香味浓，下饭好菜' },
-    { id: 41, name: '肉末茄子', price: 36, category: 'hot', desc: '茄子香嫩，肉末鲜香，美味可口' },
+    { id: 41, name: '肉末茄子', price: 36, category: 'hot', desc: '茄子香嫩，肉末香滑，美味可口' },
     { id: 42, name: '红烧豆腐', price: 28, category: 'hot', desc: '豆腐嫩滑，酱汁浓郁，简单美味' },
     { id: 43, name: '麻婆豆腐', price: 32, category: 'hot', desc: '麻辣鲜香，豆腐嫩滑，川菜经典' },
     { id: 44, name: '韭菜炒鸡蛋', price: 26, category: 'hot', desc: '韭菜鲜香，鸡蛋滑嫩，家常小炒' },
@@ -167,10 +193,206 @@ const dishesData = [
 ];
 
 let currentCategory = 'all';
-let favorites = JSON.parse(localStorage.getItem('tianjin_favorites') || '[]');
-let cart = JSON.parse(localStorage.getItem('tianjin_cart') || '[]');
-let orders = JSON.parse(localStorage.getItem('tianjin_orders') || '[]');
+let favorites = [];
+let cart = [];
+let orders = [];
 let currentPage = 'menu';
+
+// 从 Supabase 加载数据
+async function loadUserData() {
+    try {
+        // 加载收藏
+        const { data: favData, error: favError } = await supabaseClient
+            .from('favorites')
+            .select('*')
+            .eq('user_id', userId);
+        
+        if (!favError && favData) {
+            favorites = favData.map(f => f.dish_id);
+        }
+        
+        // 加载购物车
+        const { data: cartData, error: cartError } = await supabaseClient
+            .from('cart_items')
+            .select('*')
+            .eq('user_id', userId);
+        
+        if (!cartError && cartData) {
+            cart = cartData.map(item => ({
+                dishId: item.dish_id,
+                dishName: item.dish_name,
+                price: item.price,
+                quantity: item.quantity
+            }));
+        }
+        
+        // 加载订单
+        const { data: ordersData, error: ordersError } = await supabaseClient
+            .from('orders')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+        
+        if (!ordersError && ordersData) {
+            orders = ordersData.map(item => ({
+                dishId: item.dish_id,
+                dishName: item.dish_name,
+                price: item.price,
+                quantity: item.quantity,
+                timestamp: new Date(item.created_at).getTime()
+            }));
+        }
+    } catch (error) {
+        console.error('加载用户数据失败:', error);
+    }
+}
+
+// 监听实时数据变化
+function setupRealtimeSubscription() {
+    // 监听订单变化
+    supabaseClient
+        .channel('orders_channel')
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'orders',
+            filter: `user_id=eq.${userId}`
+        }, async (payload) => {
+            console.log('订单变化:', payload);
+            await loadUserData();
+            renderOrders();
+            updateBadges();
+        })
+        .subscribe();
+    
+    // 监听购物车变化
+    supabaseClient
+        .channel('cart_channel')
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'cart_items',
+            filter: `user_id=eq.${userId}`
+        }, async (payload) => {
+            console.log('购物车变化:', payload);
+            await loadUserData();
+            renderCart();
+            updateBadges();
+        })
+        .subscribe();
+    
+    // 监听收藏变化
+    supabaseClient
+        .channel('favorites_channel')
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: 'favorites',
+            filter: `user_id=eq.${userId}`
+        }, async (payload) => {
+            console.log('收藏变化:', payload);
+            await loadUserData();
+            renderFavorites();
+        })
+        .subscribe();
+}
+
+// 更新收藏到 Supabase
+async function updateFavoriteInSupabase(dishId, isFavorite) {
+    try {
+        const dish = dishesData.find(d => d.id === dishId);
+        
+        if (isFavorite) {
+            // 添加收藏
+            await supabaseClient
+                .from('favorites')
+                .insert({
+                    user_id: userId,
+                    dish_id: dishId,
+                    dish_name: dish.name
+                });
+        } else {
+            // 删除收藏
+            await supabaseClient
+                .from('favorites')
+                .delete()
+                .eq('user_id', userId)
+                .eq('dish_id', dishId);
+        }
+    } catch (error) {
+        console.error('更新收藏失败:', error);
+    }
+}
+
+// 更新购物车到 Supabase
+async function updateCartInSupabase() {
+    try {
+        // 先删除所有购物车项
+        await supabaseClient
+            .from('cart_items')
+            .delete()
+            .eq('user_id', userId);
+        
+        // 添加新的购物车项
+        if (cart.length > 0) {
+            const cartItems = cart.map(item => ({
+                user_id: userId,
+                dish_id: item.dishId,
+                dish_name: item.dishName,
+                price: item.price,
+                quantity: item.quantity
+            }));
+            
+            await supabaseClient
+                .from('cart_items')
+                .insert(cartItems);
+        }
+    } catch (error) {
+        console.error('更新购物车失败:', error);
+    }
+}
+
+// 更新订单到 Supabase
+async function addOrderToSupabase(orderItem) {
+    try {
+        await supabaseClient
+            .from('orders')
+            .insert({
+                user_id: userId,
+                dish_id: orderItem.dishId,
+                dish_name: orderItem.dishName,
+                price: orderItem.price,
+                quantity: orderItem.quantity
+            });
+    } catch (error) {
+        console.error('添加订单失败:', error);
+    }
+}
+
+// 删除订单从 Supabase
+async function deleteOrderFromSupabase(dishId) {
+    try {
+        await supabaseClient
+            .from('orders')
+            .delete()
+            .eq('user_id', userId)
+            .eq('dish_id', dishId);
+    } catch (error) {
+        console.error('删除订单失败:', error);
+    }
+}
+
+// 清空订单从 Supabase
+async function clearOrdersFromSupabase() {
+    try {
+        await supabaseClient
+            .from('orders')
+            .delete()
+            .eq('user_id', userId);
+    } catch (error) {
+        console.error('清空订单失败:', error);
+    }
+}
 
 function init() {
     renderCategories();
@@ -180,6 +402,15 @@ function init() {
     renderOrders();
     setupEventListeners();
     updateBadges();
+    
+    // 加载用户数据并设置实时订阅
+    loadUserData().then(() => {
+        setupRealtimeSubscription();
+        renderFavorites();
+        renderCart();
+        renderOrders();
+        updateBadges();
+    });
 }
 
 function renderCategories() {
@@ -197,213 +428,39 @@ function renderDishes() {
         filteredDishes = dishesData.filter(dish => dish.category === currentCategory);
     }
     
+    if (searchQuery) {
+        filteredDishes = filteredDishes.filter(dish => 
+            dish.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            dish.desc.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }
+    
     dishGrid.innerHTML = filteredDishes.map(dish => createDishCard(dish)).join('');
 }
 
 function createDishCard(dish) {
-    const isFavorited = favorites.includes(dish.id);
+    const isFavorite = favorites.includes(dish.id);
     return `
-        <div class="dish-card" data-id="${dish.id}">
-            <button class="favorite-btn ${isFavorited ? 'favorited' : ''}" data-id="${dish.id}" onclick="toggleFavorite(${dish.id})">
-                ${isFavorited ? '❤️' : '🤍'}
+        <div class="dish-card">
+            <button class="favorite-btn ${isFavorite ? 'active' : ''}" data-dish-id="${dish.id}">
+                ${isFavorite ? '❤️' : '🤍'}
             </button>
             <div class="dish-info">
                 <h3 class="dish-name">${dish.name}</h3>
                 <p class="dish-desc">${dish.desc}</p>
-                <div class="dish-bottom">
-                    <span class="dish-price">¥${dish.price}</span>
-                    <button class="add-cart-btn" onclick="addToCart(${dish.id})">加入购物车</button>
+                <div class="dish-footer">
+                    <span class="dish-price">¥${dish.price === 0 ? '时价' : dish.price}</span>
+                    <button class="add-to-cart-btn" data-dish-id="${dish.id}">加入购物车</button>
                 </div>
             </div>
         </div>
     `;
 }
 
-function toggleFavorite(dishId) {
-    const index = favorites.indexOf(dishId);
-    if (index > -1) {
-        favorites.splice(index, 1);
-    } else {
-        favorites.push(dishId);
-    }
-    localStorage.setItem('tianjin_favorites', JSON.stringify(favorites));
-    updateFavoriteButtons();
-    renderFavorites();
-    updateBadges();
-}
-
-function updateFavoriteButtons() {
-    document.querySelectorAll('.favorite-btn').forEach(btn => {
-        const dishId = parseInt(btn.dataset.id);
-        const isFavorited = favorites.includes(dishId);
-        btn.classList.toggle('favorited', isFavorited);
-        btn.innerHTML = isFavorited ? '❤️' : '🤍';
-    });
-}
-
-function renderFavorites() {
-    const favoritesGrid = document.getElementById('favoritesGrid');
-    const favoritesEmpty = document.getElementById('favoritesEmpty');
-    
-    const favoriteDishes = dishesData.filter(dish => favorites.includes(dish.id));
-    
-    if (favoriteDishes.length === 0) {
-        favoritesEmpty.style.display = 'block';
-        favoritesGrid.innerHTML = '';
-    } else {
-        favoritesEmpty.style.display = 'none';
-        favoritesGrid.innerHTML = favoriteDishes.map(dish => createDishCard(dish)).join('');
-    }
-}
-
-function addToCart(dishId) {
-    const dish = dishesData.find(d => d.id === dishId);
-    const existingItem = cart.find(item => item.id === dishId);
-    
-    if (existingItem) {
-        existingItem.quantity++;
-    } else {
-        cart.push({ ...dish, quantity: 1 });
-    }
-    
-    localStorage.setItem('tianjin_cart', JSON.stringify(cart));
-    renderCart();
-    updateBadges();
-    
-    const btn = event.target;
-    btn.classList.add('bounce');
-    setTimeout(() => btn.classList.remove('bounce'), 300);
-}
-
-function updateQuantity(dishId, change) {
-    const item = cart.find(i => i.id === dishId);
-    if (item) {
-        item.quantity += change;
-        if (item.quantity <= 0) {
-            removeFromCart(dishId);
-        } else {
-            localStorage.setItem('tianjin_cart', JSON.stringify(cart));
-            renderCart();
-            updateBadges();
-        }
-    }
-}
-
-function removeFromCart(dishId) {
-    cart = cart.filter(item => item.id !== dishId);
-    localStorage.setItem('tianjin_cart', JSON.stringify(cart));
-    renderCart();
-    updateBadges();
-}
-
-function clearCart() {
-    if (cart.length === 0) return;
-    if (confirm('确定要清空购物车吗？')) {
-        cart = [];
-        localStorage.setItem('tianjin_cart', JSON.stringify(cart));
-        renderCart();
-        updateBadges();
-    }
-}
-
-function renderCart() {
-    const cartList = document.getElementById('cartList');
-    const cartEmpty = document.getElementById('cartEmpty');
-    const cartFooter = document.getElementById('cartFooter');
-    const totalPrice = document.getElementById('totalPrice');
-    
-    if (cart.length === 0) {
-        cartEmpty.style.display = 'block';
-        cartList.innerHTML = '';
-        cartFooter.style.display = 'none';
-    } else {
-        cartEmpty.style.display = 'none';
-        cartFooter.style.display = 'flex';
-        
-        cartList.innerHTML = cart.map(item => `
-            <div class="cart-item" data-id="${item.id}">
-                <div class="cart-item-info">
-                    <h4 class="cart-item-name">${item.name}</h4>
-                    <span class="cart-item-price">¥${item.price}</span>
-                </div>
-                <div class="cart-item-quantity">
-                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, -1)">−</button>
-                    <span class="quantity-value">${item.quantity}</span>
-                    <button class="quantity-btn" onclick="updateQuantity(${item.id}, 1)">+</button>
-                </div>
-                <button class="delete-btn" onclick="removeFromCart(${item.id})">🗑️</button>
-            </div>
-        `).join('');
-        
-        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        totalPrice.textContent = `¥${total}`;
-    }
-}
-
-function checkout() {
-    if (cart.length === 0) {
-        alert('购物车是空的，快去挑选美食吧！');
-        return;
-    }
-    
-    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const itemsText = cart.map(item => `${item.name} x ${item.quantity}`).join(',');
-    
-    alert(`下单成功！\n\n菜品：${itemsText}\n总计：¥${total}\n\n感谢您的订购！`);
-    
-    orders.push(...cart.map(item => ({
-        ...item,
-        orderTime: new Date().toLocaleString('zh-CN')
-    })));
-    localStorage.setItem('tianjin_orders', JSON.stringify(orders));
-    
-    cart = [];
-    localStorage.setItem('tianjin_cart', JSON.stringify(cart));
-    renderCart();
-    renderOrders();
-    updateBadges();
-}
-
-function updateBadges() {
-    const favoritesBadge = document.getElementById('favoritesBadge');
-    const cartBadge = document.getElementById('cartBadge');
-    const ordersBadge = document.getElementById('ordersBadge');
-    
-    if (favorites.length > 0) {
-        favoritesBadge.textContent = favorites.length;
-        favoritesBadge.style.display = 'flex';
-    } else {
-        favoritesBadge.style.display = 'none';
-    }
-    
-    const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-    if (cartCount > 0) {
-        cartBadge.textContent = cartCount;
-        cartBadge.style.display = 'flex';
-    } else {
-        cartBadge.style.display = 'none';
-    }
-    
-    if (orders.length > 0) {
-        ordersBadge.textContent = orders.length;
-        ordersBadge.style.display = 'flex';
-    } else {
-        ordersBadge.style.display = 'none';
-    }
-}
-
-function switchPage(page) {
-    currentPage = page;
-    
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById(`${page}Page`).classList.add('active');
-    
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.page === page);
-    });
-}
+let searchQuery = '';
 
 function setupEventListeners() {
+    // 分类切换
     document.getElementById('categoryList').addEventListener('click', (e) => {
         if (e.target.classList.contains('category-item')) {
             currentCategory = e.target.dataset.category;
@@ -412,85 +469,354 @@ function setupEventListeners() {
         }
     });
     
+    // 收藏按钮
+    document.getElementById('dishGrid').addEventListener('click', (e) => {
+        if (e.target.classList.contains('favorite-btn')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            toggleFavorite(dishId);
+        } else if (e.target.classList.contains('add-to-cart-btn')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            addToCart(dishId);
+        }
+    });
+    
+    // 搜索功能
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        renderDishes();
+    });
+    
+    // 页面切换
     document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', () => switchPage(item.dataset.page));
+        item.addEventListener('click', () => {
+            const page = item.dataset.page;
+            switchPage(page);
+        });
     });
     
-    document.getElementById('searchBtn').addEventListener('click', searchDishes);
-    document.getElementById('searchInput').addEventListener('keyup', (e) => {
-        if (e.key === 'Enter') searchDishes();
+    // 购物车操作
+    document.getElementById('cartItems').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-from-cart')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            removeFromCart(dishId);
+        } else if (e.target.classList.contains('decrease-quantity')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            decreaseQuantity(dishId);
+        } else if (e.target.classList.contains('increase-quantity')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            increaseQuantity(dishId);
+        }
     });
     
-    document.getElementById('clearCartBtn').addEventListener('click', clearCart);
+    // 清空购物车
+    document.getElementById('clearCart').addEventListener('click', () => {
+        cart = [];
+        updateCartInSupabase();
+        renderCart();
+        updateBadges();
+    });
+    
+    // 结算
     document.getElementById('checkoutBtn').addEventListener('click', checkout);
-    document.getElementById('clearOrdersBtn').addEventListener('click', clearOrders);
+    
+    // 已点菜品操作
+    document.getElementById('ordersList').addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-order')) {
+            const dishId = parseInt(e.target.dataset.dishId);
+            deleteOrder(dishId);
+        }
+    });
+    
+    // 分享链接按钮
+    document.getElementById('shareLinkBtn')?.addEventListener('click', () => {
+        const shareLink = generateShareLink();
+        
+        // 复制链接到剪贴板
+        navigator.clipboard.writeText(shareLink).then(() => {
+            showToast('链接已复制，可以分享给朋友了！');
+        }).catch(() => {
+            // 如果复制失败，使用 prompt
+            prompt('复制以下链接分享给朋友：', shareLink);
+        });
+    });
+    
+    // 清空记录按钮
+    document.getElementById('clearOrdersBtn')?.addEventListener('click', () => {
+        clearOrders();
+    });
 }
 
-function searchDishes() {
-    const keyword = document.getElementById('searchInput').value.toLowerCase().trim();
-    const dishGrid = document.getElementById('dishGrid');
+function toggleFavorite(dishId) {
+    const index = favorites.indexOf(dishId);
+    if (index > -1) {
+        favorites.splice(index, 1);
+        updateFavoriteInSupabase(dishId, false);
+    } else {
+        favorites.push(dishId);
+        updateFavoriteInSupabase(dishId, true);
+    }
+    renderFavorites();
+    renderDishes();
+}
+
+function addToCart(dishId) {
+    const dish = dishesData.find(d => d.id === dishId);
     
-    if (!keyword) {
-        switchPage('menu');
-        currentCategory = 'all';
-        renderCategories();
-        renderDishes();
-        return;
+    // 检查是否已点过此菜品
+    const hasOrdered = orders.some(order => order.dishId === dishId);
+    
+    if (hasOrdered) {
+        // 显示确认对话框
+        if (confirm(`您已点过此菜品"${dish.name}"，是否再次添加？`)) {
+            addDishToCart(dish);
+        }
+    } else {
+        // 检查购物车是否已有
+        const existingItem = cart.find(item => item.dishId === dishId);
+        if (existingItem) {
+            existingItem.quantity++;
+        } else {
+            addDishToCart(dish);
+        }
     }
     
-    switchPage('menu');
-    const searchResults = dishesData.filter(dish => 
-        dish.name.toLowerCase().includes(keyword) || 
-        dish.desc.toLowerCase().includes(keyword)
-    );
+    updateCartInSupabase();
+    renderCart();
+    updateBadges();
+}
+
+function addDishToCart(dish) {
+    cart.push({
+        dishId: dish.id,
+        dishName: dish.name,
+        price: dish.price,
+        quantity: 1
+    });
+    showToast(`已添加 ${dish.name}`);
+}
+
+function removeFromCart(dishId) {
+    cart = cart.filter(item => item.dishId !== dishId);
+    updateCartInSupabase();
+    renderCart();
+    updateBadges();
+}
+
+function decreaseQuantity(dishId) {
+    const item = cart.find(item => item.dishId === dishId);
+    if (item) {
+        item.quantity--;
+        if (item.quantity === 0) {
+            removeFromCart(dishId);
+        } else {
+            updateCartInSupabase();
+        }
+        renderCart();
+        updateBadges();
+    }
+}
+
+function increaseQuantity(dishId) {
+    const item = cart.find(item => item.dishId === dishId);
+    if (item) {
+        item.quantity++;
+        updateCartInSupabase();
+        renderCart();
+        updateBadges();
+    }
+}
+
+function renderFavorites() {
+    const favoritesGrid = document.getElementById('favoritesGrid');
+    if (!favoritesGrid) return;
     
-    dishGrid.innerHTML = searchResults.map(dish => createDishCard(dish)).join('');
+    const favoriteDishes = dishesData.filter(dish => favorites.includes(dish.id));
+    
+    if (favoriteDishes.length === 0) {
+        favoritesGrid.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暂无收藏菜品</div>';
+    } else {
+        favoritesGrid.innerHTML = favoriteDishes.map(dish => createDishCard(dish)).join('');
+    }
+}
+
+function renderCart() {
+    const cartItems = document.getElementById('cartItems');
+    const cartTotal = document.getElementById('cartTotal');
+    
+    if (cart.length === 0) {
+        cartItems.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">购物车是空的</div>';
+        cartTotal.textContent = '¥0';
+    } else {
+        cartItems.innerHTML = cart.map(item => `
+            <div class="cart-item">
+                <div class="cart-item-info">
+                    <div class="cart-item-name">${item.dishName}</div>
+                    <div class="cart-item-price">¥${item.price}</div>
+                </div>
+                <div class="cart-item-actions">
+                    <div class="quantity-control">
+                        <button class="decrease-quantity" data-dish-id="${item.dishId}">-</button>
+                        <span>${item.quantity}</span>
+                        <button class="increase-quantity" data-dish-id="${item.dishId}">+</button>
+                    </div>
+                    <button class="remove-from-cart" data-dish-id="${item.dishId}">删除</button>
+                </div>
+            </div>
+        `).join('');
+        
+        const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        cartTotal.textContent = `¥${total}`;
+    }
 }
 
 function renderOrders() {
     const ordersList = document.getElementById('ordersList');
-    const ordersEmpty = document.getElementById('ordersEmpty');
+    if (!ordersList) return;
     
     if (orders.length === 0) {
-        ordersEmpty.style.display = 'block';
-        ordersList.innerHTML = '';
+        ordersList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暂无点菜记录</div>';
     } else {
-        ordersEmpty.style.display = 'none';
-        const reversedOrders = [...orders].reverse();
-        ordersList.innerHTML = reversedOrders.map((item, index) => {
-            const originalIndex = orders.length - 1 - index;
-            return `
-            <div class="order-item" data-index="${originalIndex}">
-                <div class="order-item-info">
-                    <h4 class="order-item-name">${item.name}</h4>
-                    <span class="order-item-price">¥${item.price}</span>
+        // 按时间分组
+        const ordersByTime = {};
+        orders.forEach(order => {
+            const time = new Date(order.timestamp).toLocaleString('zh-CN');
+            if (!ordersByTime[time]) {
+                ordersByTime[time] = [];
+            }
+            ordersByTime[time].push(order);
+        });
+        
+        let html = '';
+        for (const [time, timeOrders] of Object.entries(ordersByTime)) {
+            const total = timeOrders.reduce((sum, order) => sum + order.price * order.quantity, 0);
+            html += `
+                <div class="order-group">
+                    <div class="order-time">${time}</div>
+                    ${timeOrders.map(order => `
+                        <div class="order-item">
+                            <div class="order-item-info">
+                                <div class="order-item-name">${order.dishName}</div>
+                                <div class="order-item-details">¥${order.price} × ${order.quantity}</div>
+                            </div>
+                            <div class="order-item-price">¥${order.price * order.quantity}</div>
+                            <button class="delete-order" data-dish-id="${order.dishId}">删除</button>
+                        </div>
+                    `).join('')}
+                    <div class="order-group-total">小计：¥${total}</div>
                 </div>
-                <div class="order-item-quantity">
-                    <span>x${item.quantity}</span>
-                </div>
-                <button class="order-delete-btn" onclick="deleteOrder(${originalIndex})">🗑️</button>
-            </div>
-        `}).join('');
+            `;
+        }
+        ordersList.innerHTML = html;
     }
 }
 
-function deleteOrder(index) {
-    if (confirm('确定要删除这道菜品吗？')) {
-        orders.splice(index, 1);
-        localStorage.setItem('tianjin_orders', JSON.stringify(orders));
-        renderOrders();
-        updateBadges();
+function checkout() {
+    if (cart.length === 0) {
+        alert('购物车是空的！');
+        return;
     }
+    
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    
+    if (confirm(`确认下单吗？\n总计：¥${total}`)) {
+        // 将购物车商品添加到订单
+        const timestamp = Date.now();
+        cart.forEach(item => {
+            orders.unshift({
+                dishId: item.dishId,
+                dishName: item.dishName,
+                price: item.price,
+                quantity: item.quantity,
+                timestamp
+            });
+            addOrderToSupabase(item);
+        });
+        
+        // 清空购物车
+        cart = [];
+        updateCartInSupabase();
+        
+        renderOrders();
+        renderCart();
+        updateBadges();
+        
+        // 切换到已点菜品页面
+        switchPage('orders');
+        
+        showToast('下单成功！');
+    }
+}
+
+function deleteOrder(dishId) {
+    orders = orders.filter(order => order.dishId !== dishId);
+    deleteOrderFromSupabase(dishId);
+    renderOrders();
 }
 
 function clearOrders() {
-    if (orders.length === 0) return;
-    if (confirm('确定要清空所有已点菜品记录吗？')) {
+    if (confirm('确定要清空所有点菜记录吗？')) {
         orders = [];
-        localStorage.setItem('tianjin_orders', JSON.stringify(orders));
+        clearOrdersFromSupabase();
         renderOrders();
-        updateBadges();
     }
 }
 
+function updateBadges() {
+    // 购物车徽章
+    const cartBadge = document.querySelector('[data-page="cart"] .badge');
+    if (cartBadge) {
+        const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+        cartBadge.textContent = totalItems;
+        cartBadge.style.display = totalItems > 0 ? 'flex' : 'none';
+    }
+    
+    // 已点菜品徽章
+    const ordersBadge = document.querySelector('[data-page="orders"] .badge');
+    if (ordersBadge) {
+        const uniqueOrders = new Set(orders.map(o => o.dishId)).size;
+        ordersBadge.textContent = uniqueOrders;
+        ordersBadge.style.display = uniqueOrders > 0 ? 'flex' : 'none';
+    }
+}
+
+function switchPage(page) {
+    currentPage = page;
+    
+    // 更新导航状态
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.page === page);
+    });
+    
+    // 切换页面内容
+    document.querySelectorAll('.page').forEach(p => {
+        p.style.display = 'none';
+    });
+    document.getElementById(`${page}Page`).style.display = 'block';
+    
+    // 滚动到顶部
+    window.scrollTo(0, 0);
+}
+
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 16px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        z-index: 1000;
+        animation: fadeIn 0.3s;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+// 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', init);
