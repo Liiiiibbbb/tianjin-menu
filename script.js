@@ -445,13 +445,15 @@ function createDishCard(dish) {
             <button class="favorite-btn ${isFavorite ? 'active' : ''}" data-dish-id="${dish.id}">
                 ${isFavorite ? '❤️' : '🤍'}
             </button>
-            <div class="dish-info">
+            <div class="dish-content">
                 <h3 class="dish-name">${dish.name}</h3>
                 <p class="dish-desc">${dish.desc}</p>
-                <div class="dish-footer">
-                    <span class="dish-price">¥${dish.price === 0 ? '时价' : dish.price}</span>
-                    <button class="add-to-cart-btn" data-dish-id="${dish.id}">加入购物车</button>
-                </div>
+            </div>
+            <div class="dish-footer">
+                <span class="dish-price">¥${dish.price === 0 ? '时价' : dish.price}</span>
+                <button class="add-to-cart-btn" data-dish-id="${dish.id}" title="加入购物车">
+                    <span>+</span>
+                </button>
             </div>
         </div>
     `;
@@ -461,89 +463,165 @@ let searchQuery = '';
 
 function setupEventListeners() {
     // 分类切换
-    document.getElementById('categoryList').addEventListener('click', (e) => {
-        if (e.target.classList.contains('category-item')) {
-            currentCategory = e.target.dataset.category;
-            renderCategories();
-            renderDishes();
-        }
-    });
+    const categoryList = document.getElementById('categoryList');
+    if (categoryList) {
+        categoryList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('category-item')) {
+                currentCategory = e.target.dataset.category;
+                renderCategories();
+                renderDishes();
+            }
+        });
+    }
     
-    // 收藏按钮
-    document.getElementById('dishGrid').addEventListener('click', (e) => {
-        if (e.target.classList.contains('favorite-btn')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            toggleFavorite(dishId);
-        } else if (e.target.classList.contains('add-to-cart-btn')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            addToCart(dishId);
-        }
-    });
+    // 收藏按钮和加入购物车按钮
+    const dishGrid = document.getElementById('dishGrid');
+    if (dishGrid) {
+        dishGrid.addEventListener('click', (e) => {
+            // 查找最近的按钮元素（处理点击 span 的情况）
+            const favoriteBtn = e.target.closest('.favorite-btn');
+            const addToCartBtn = e.target.closest('.add-to-cart-btn');
+            
+            if (favoriteBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dishId = parseInt(favoriteBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    toggleFavorite(dishId);
+                }
+            } else if (addToCartBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const dishId = parseInt(addToCartBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    addToCart(dishId);
+                }
+            }
+        });
+    }
     
     // 搜索功能
-    document.getElementById('searchInput').addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        renderDishes();
-    });
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value.trim();
+            renderDishes();
+        });
+        
+        // 搜索按钮点击事件
+        const searchBtn = document.getElementById('searchBtn');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                searchInput.focus();
+                searchQuery = searchInput.value.trim();
+                renderDishes();
+            });
+        }
+        
+        // 回车键搜索
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchQuery = searchInput.value.trim();
+                renderDishes();
+                searchInput.blur();
+            }
+        });
+    }
     
     // 页面切换
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', () => {
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
             const page = item.dataset.page;
-            switchPage(page);
+            if (page) {
+                switchPage(page);
+            }
         });
     });
     
     // 购物车操作
-    document.getElementById('cartItems').addEventListener('click', (e) => {
-        if (e.target.classList.contains('remove-from-cart')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            removeFromCart(dishId);
-        } else if (e.target.classList.contains('decrease-quantity')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            decreaseQuantity(dishId);
-        } else if (e.target.classList.contains('increase-quantity')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            increaseQuantity(dishId);
-        }
-    });
+    const cartItems = document.getElementById('cartItems');
+    if (cartItems) {
+        cartItems.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('.remove-from-cart');
+            const decreaseBtn = e.target.closest('.decrease-quantity');
+            const increaseBtn = e.target.closest('.increase-quantity');
+            
+            if (removeBtn) {
+                const dishId = parseInt(removeBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    removeFromCart(dishId);
+                }
+            } else if (decreaseBtn) {
+                const dishId = parseInt(decreaseBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    decreaseQuantity(dishId);
+                }
+            } else if (increaseBtn) {
+                const dishId = parseInt(increaseBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    increaseQuantity(dishId);
+                }
+            }
+        });
+    }
     
     // 清空购物车
-    document.getElementById('clearCart').addEventListener('click', () => {
-        cart = [];
-        updateCartInSupabase();
-        renderCart();
-        updateBadges();
-    });
+    const clearCartBtn = document.getElementById('clearCartBtn');
+    if (clearCartBtn) {
+        clearCartBtn.addEventListener('click', () => {
+            cart = [];
+            updateCartInSupabase();
+            renderCart();
+            updateBadges();
+        });
+    }
     
     // 结算
-    document.getElementById('checkoutBtn').addEventListener('click', checkout);
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (checkoutBtn) {
+        checkoutBtn.addEventListener('click', checkout);
+    }
     
     // 已点菜品操作
-    document.getElementById('ordersList').addEventListener('click', (e) => {
-        if (e.target.classList.contains('delete-order')) {
-            const dishId = parseInt(e.target.dataset.dishId);
-            deleteOrder(dishId);
-        }
-    });
+    const ordersList = document.getElementById('ordersList');
+    if (ordersList) {
+        ordersList.addEventListener('click', (e) => {
+            const deleteBtn = e.target.closest('.delete-order');
+            if (deleteBtn) {
+                const dishId = parseInt(deleteBtn.dataset.dishId);
+                if (!isNaN(dishId)) {
+                    deleteOrder(dishId);
+                }
+            }
+        });
+    }
     
     // 分享链接按钮
-    document.getElementById('shareLinkBtn')?.addEventListener('click', () => {
-        const shareLink = generateShareLink();
-        
-        // 复制链接到剪贴板
-        navigator.clipboard.writeText(shareLink).then(() => {
-            showToast('链接已复制，可以分享给朋友了！');
-        }).catch(() => {
-            // 如果复制失败，使用 prompt
-            prompt('复制以下链接分享给朋友：', shareLink);
+    const shareLinkBtn = document.getElementById('shareLinkBtn');
+    if (shareLinkBtn) {
+        shareLinkBtn.addEventListener('click', () => {
+            const shareLink = generateShareLink();
+            
+            // 复制链接到剪贴板
+            navigator.clipboard.writeText(shareLink).then(() => {
+                showToast('链接已复制，可以分享给朋友了！');
+            }).catch(() => {
+                // 如果复制失败，使用 prompt
+                prompt('复制以下链接分享给朋友：', shareLink);
+            });
         });
-    });
+    }
     
     // 清空记录按钮
-    document.getElementById('clearOrdersBtn')?.addEventListener('click', () => {
-        clearOrders();
-    });
+    const clearOrdersBtn = document.getElementById('clearOrdersBtn');
+    if (clearOrdersBtn) {
+        clearOrdersBtn.addEventListener('click', () => {
+            clearOrders();
+        });
+    }
 }
 
 function toggleFavorite(dishId) {
