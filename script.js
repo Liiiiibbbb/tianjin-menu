@@ -197,6 +197,7 @@ let favorites = [];
 let cart = [];
 let orders = [];
 let currentPage = 'menu';
+let searchQuery = '';
 
 // 从 Supabase 加载数据
 async function loadUserData() {
@@ -303,7 +304,6 @@ async function updateFavoriteInSupabase(dishId, isFavorite) {
         const dish = dishesData.find(d => d.id === dishId);
         
         if (isFavorite) {
-            // 添加收藏
             await supabaseClient
                 .from('favorites')
                 .insert({
@@ -312,7 +312,6 @@ async function updateFavoriteInSupabase(dishId, isFavorite) {
                     dish_name: dish.name
                 });
         } else {
-            // 删除收藏
             await supabaseClient
                 .from('favorites')
                 .delete()
@@ -327,13 +326,11 @@ async function updateFavoriteInSupabase(dishId, isFavorite) {
 // 更新购物车到 Supabase
 async function updateCartInSupabase() {
     try {
-        // 先删除所有购物车项
         await supabaseClient
             .from('cart_items')
             .delete()
             .eq('user_id', userId);
         
-        // 添加新的购物车项
         if (cart.length > 0) {
             const cartItems = cart.map(item => ({
                 user_id: userId,
@@ -395,13 +392,18 @@ async function clearOrdersFromSupabase() {
 }
 
 function init() {
+    console.log('初始化应用...');
+    
+    // 渲染所有页面
     renderCategories();
     renderDishes();
     renderFavorites();
     renderCart();
     renderOrders();
-    setupEventListeners();
     updateBadges();
+    
+    // 绑定所有事件监听器
+    setupGlobalEventListeners();
     
     // 加载用户数据并设置实时订阅
     loadUserData().then(() => {
@@ -410,11 +412,14 @@ function init() {
         renderCart();
         renderOrders();
         updateBadges();
+        console.log('用户数据加载完成');
     });
 }
 
 function renderCategories() {
     const categoryList = document.getElementById('categoryList');
+    if (!categoryList) return;
+    
     categoryList.innerHTML = categories.map(cat => `
         <div class="category-item ${cat.id === currentCategory ? 'active' : ''}" data-category="${cat.id}">${cat.name}</div>
     `).join('');
@@ -422,6 +427,8 @@ function renderCategories() {
 
 function renderDishes() {
     const dishGrid = document.getElementById('dishGrid');
+    if (!dishGrid) return;
+    
     let filteredDishes = dishesData;
     
     if (currentCategory !== 'all') {
@@ -436,6 +443,7 @@ function renderDishes() {
     }
     
     dishGrid.innerHTML = filteredDishes.map(dish => createDishCard(dish)).join('');
+    console.log(`渲染了 ${filteredDishes.length} 个菜品`);
 }
 
 function createDishCard(dish) {
@@ -459,48 +467,141 @@ function createDishCard(dish) {
     `;
 }
 
-let searchQuery = '';
-
-function setupEventListeners() {
-    // 分类切换
-    const categoryList = document.getElementById('categoryList');
-    if (categoryList) {
-        categoryList.addEventListener('click', (e) => {
-            if (e.target.classList.contains('category-item')) {
-                currentCategory = e.target.dataset.category;
-                renderCategories();
-                renderDishes();
+// 全局事件监听器 - 使用事件委托
+function setupGlobalEventListeners() {
+    console.log('=== 设置全局事件监听器 ===');
+    console.log('DOM 已加载，开始绑定事件...');
+    
+    // 1. 分类切换 - 事件委托
+    document.addEventListener('click', (e) => {
+        console.log('点击事件触发:', e.target.tagName, e.target.className);
+        
+        // 分类切换
+        if (e.target.classList.contains('category-item')) {
+            currentCategory = e.target.dataset.category;
+            console.log('✓ 切换分类:', currentCategory);
+            renderCategories();
+            renderDishes();
+            return;
+        }
+        
+        // 收藏按钮
+        if (e.target.closest('.favorite-btn')) {
+            const btn = e.target.closest('.favorite-btn');
+            const dishId = parseInt(btn.dataset.dishId);
+            console.log('✓ 点击收藏:', dishId);
+            if (!isNaN(dishId)) {
+                toggleFavorite(dishId);
             }
+            return;
+        }
+        
+        // 加入购物车按钮
+        if (e.target.closest('.add-to-cart-btn')) {
+            const btn = e.target.closest('.add-to-cart-btn');
+            const dishId = parseInt(btn.dataset.dishId);
+            console.log('✓ 点击加入购物车:', dishId);
+            if (!isNaN(dishId)) {
+                addToCart(dishId);
+            }
+            return;
+        }
+        
+        // 底部导航
+        if (e.target.closest('.nav-item')) {
+            const navItem = e.target.closest('.nav-item');
+            const page = navItem.dataset.page;
+            console.log('✓ 切换页面:', page);
+            if (page) {
+                switchPage(page);
+            }
+            return;
+        }
+        
+        // 购物车 - 移除按钮
+        if (e.target.closest('.remove-from-cart')) {
+            const btn = e.target.closest('.remove-from-cart');
+            const dishId = parseInt(btn.dataset.dishId);
+            if (!isNaN(dishId)) {
+                removeFromCart(dishId);
+            }
+            return;
+        }
+        
+        // 购物车 - 减少数量
+        if (e.target.closest('.decrease-quantity')) {
+            const btn = e.target.closest('.decrease-quantity');
+            const dishId = parseInt(btn.dataset.dishId);
+            if (!isNaN(dishId)) {
+                decreaseQuantity(dishId);
+            }
+            return;
+        }
+        
+        // 购物车 - 增加数量
+        if (e.target.closest('.increase-quantity')) {
+            const btn = e.target.closest('.increase-quantity');
+            const dishId = parseInt(btn.dataset.dishId);
+            if (!isNaN(dishId)) {
+                increaseQuantity(dishId);
+            }
+            return;
+        }
+        
+        // 删除订单
+        if (e.target.closest('.delete-order')) {
+            const btn = e.target.closest('.delete-order');
+            const dishId = parseInt(btn.dataset.dishId);
+            if (!isNaN(dishId)) {
+                deleteOrder(dishId);
+            }
+            return;
+        }
+    });
+    
+    // 2. 清空购物车
+    const clearCartBtn = document.getElementById('clearCartBtn');
+    if (clearCartBtn) {
+        clearCartBtn.addEventListener('click', () => {
+            console.log('清空购物车');
+            cart = [];
+            updateCartInSupabase();
+            renderCart();
+            updateBadges();
         });
     }
     
-    // 收藏按钮和加入购物车按钮
-    const dishGrid = document.getElementById('dishGrid');
-    if (dishGrid) {
-        dishGrid.addEventListener('click', (e) => {
-            // 查找最近的按钮元素（处理点击 span 的情况）
-            const favoriteBtn = e.target.closest('.favorite-btn');
-            const addToCartBtn = e.target.closest('.add-to-cart-btn');
-            
-            if (favoriteBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                const dishId = parseInt(favoriteBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    toggleFavorite(dishId);
-                }
-            } else if (addToCartBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                const dishId = parseInt(addToCartBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    addToCart(dishId);
-                }
-            }
+    // 3. 结算按钮
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (checkoutBtn) {
+        checkoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            checkout();
         });
     }
     
-    // 搜索功能
+    // 4. 分享链接按钮
+    const shareLinkBtn = document.getElementById('shareLinkBtn');
+    if (shareLinkBtn) {
+        shareLinkBtn.addEventListener('click', () => {
+            const shareLink = generateShareLink();
+            navigator.clipboard.writeText(shareLink).then(() => {
+                showToast('链接已复制，可以分享给朋友了！');
+            }).catch(() => {
+                prompt('复制以下链接分享给朋友：', shareLink);
+            });
+        });
+    }
+    
+    // 5. 清空记录按钮
+    const clearOrdersBtn = document.getElementById('clearOrdersBtn');
+    if (clearOrdersBtn) {
+        clearOrdersBtn.addEventListener('click', () => {
+            clearOrders();
+        });
+    }
+    
+    // 6. 搜索功能
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
@@ -508,7 +609,6 @@ function setupEventListeners() {
             renderDishes();
         });
         
-        // 搜索按钮点击事件
         const searchBtn = document.getElementById('searchBtn');
         if (searchBtn) {
             searchBtn.addEventListener('click', () => {
@@ -518,7 +618,6 @@ function setupEventListeners() {
             });
         }
         
-        // 回车键搜索
         searchInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -528,100 +627,6 @@ function setupEventListeners() {
             }
         });
     }
-    
-    // 页面切换
-    const navItems = document.querySelectorAll('.nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.dataset.page;
-            if (page) {
-                switchPage(page);
-            }
-        });
-    });
-    
-    // 购物车操作
-    const cartItems = document.getElementById('cartItems');
-    if (cartItems) {
-        cartItems.addEventListener('click', (e) => {
-            const removeBtn = e.target.closest('.remove-from-cart');
-            const decreaseBtn = e.target.closest('.decrease-quantity');
-            const increaseBtn = e.target.closest('.increase-quantity');
-            
-            if (removeBtn) {
-                const dishId = parseInt(removeBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    removeFromCart(dishId);
-                }
-            } else if (decreaseBtn) {
-                const dishId = parseInt(decreaseBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    decreaseQuantity(dishId);
-                }
-            } else if (increaseBtn) {
-                const dishId = parseInt(increaseBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    increaseQuantity(dishId);
-                }
-            }
-        });
-    }
-    
-    // 清空购物车
-    const clearCartBtn = document.getElementById('clearCartBtn');
-    if (clearCartBtn) {
-        clearCartBtn.addEventListener('click', () => {
-            cart = [];
-            updateCartInSupabase();
-            renderCart();
-            updateBadges();
-        });
-    }
-    
-    // 结算
-    const checkoutBtn = document.getElementById('checkoutBtn');
-    if (checkoutBtn) {
-        checkoutBtn.addEventListener('click', checkout);
-    }
-    
-    // 已点菜品操作
-    const ordersList = document.getElementById('ordersList');
-    if (ordersList) {
-        ordersList.addEventListener('click', (e) => {
-            const deleteBtn = e.target.closest('.delete-order');
-            if (deleteBtn) {
-                const dishId = parseInt(deleteBtn.dataset.dishId);
-                if (!isNaN(dishId)) {
-                    deleteOrder(dishId);
-                }
-            }
-        });
-    }
-    
-    // 分享链接按钮
-    const shareLinkBtn = document.getElementById('shareLinkBtn');
-    if (shareLinkBtn) {
-        shareLinkBtn.addEventListener('click', () => {
-            const shareLink = generateShareLink();
-            
-            // 复制链接到剪贴板
-            navigator.clipboard.writeText(shareLink).then(() => {
-                showToast('链接已复制，可以分享给朋友了！');
-            }).catch(() => {
-                // 如果复制失败，使用 prompt
-                prompt('复制以下链接分享给朋友：', shareLink);
-            });
-        });
-    }
-    
-    // 清空记录按钮
-    const clearOrdersBtn = document.getElementById('clearOrdersBtn');
-    if (clearOrdersBtn) {
-        clearOrdersBtn.addEventListener('click', () => {
-            clearOrders();
-        });
-    }
 }
 
 function toggleFavorite(dishId) {
@@ -629,9 +634,11 @@ function toggleFavorite(dishId) {
     if (index > -1) {
         favorites.splice(index, 1);
         updateFavoriteInSupabase(dishId, false);
+        console.log('取消收藏:', dishId);
     } else {
         favorites.push(dishId);
         updateFavoriteInSupabase(dishId, true);
+        console.log('添加收藏:', dishId);
     }
     renderFavorites();
     renderDishes();
@@ -718,14 +725,26 @@ function renderFavorites() {
 }
 
 function renderCart() {
-    const cartItems = document.getElementById('cartItems');
-    const cartTotal = document.getElementById('cartTotal');
+    const cartList = document.getElementById('cartList');
+    const cartEmpty = document.getElementById('cartEmpty');
+    const totalPrice = document.getElementById('totalPrice');
+    
+    if (!cartList) {
+        console.error('找不到 cartList 元素');
+        return;
+    }
     
     if (cart.length === 0) {
-        cartItems.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">购物车是空的</div>';
-        cartTotal.textContent = '¥0';
+        // 购物车为空：显示空状态，隐藏购物车列表
+        if (cartEmpty) cartEmpty.style.display = 'block';
+        cartList.style.display = 'none';
+        if (totalPrice) totalPrice.textContent = '¥0';
     } else {
-        cartItems.innerHTML = cart.map(item => `
+        // 购物车有商品：隐藏空状态，显示购物车列表
+        if (cartEmpty) cartEmpty.style.display = 'none';
+        cartList.style.display = 'block';
+        
+        cartList.innerHTML = cart.map(item => `
             <div class="cart-item">
                 <div class="cart-item-info">
                     <div class="cart-item-name">${item.dishName}</div>
@@ -743,7 +762,7 @@ function renderCart() {
         `).join('');
         
         const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        cartTotal.textContent = `¥${total}`;
+        if (totalPrice) totalPrice.textContent = `¥${total}`;
     }
 }
 
@@ -754,7 +773,6 @@ function renderOrders() {
     if (orders.length === 0) {
         ordersList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暂无点菜记录</div>';
     } else {
-        // 按时间分组
         const ordersByTime = {};
         orders.forEach(order => {
             const time = new Date(order.timestamp).toLocaleString('zh-CN');
@@ -797,7 +815,6 @@ function checkout() {
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     
     if (confirm(`确认下单吗？\n总计：¥${total}`)) {
-        // 将购物车商品添加到订单
         const timestamp = Date.now();
         cart.forEach(item => {
             orders.unshift({
@@ -810,7 +827,6 @@ function checkout() {
             addOrderToSupabase(item);
         });
         
-        // 清空购物车
         cart = [];
         updateCartInSupabase();
         
@@ -818,9 +834,7 @@ function checkout() {
         renderCart();
         updateBadges();
         
-        // 切换到已点菜品页面
         switchPage('orders');
-        
         showToast('下单成功！');
     }
 }
@@ -848,6 +862,14 @@ function updateBadges() {
         cartBadge.style.display = totalItems > 0 ? 'flex' : 'none';
     }
     
+    // 收藏徽章
+    const favoritesBadge = document.querySelector('[data-page="favorites"] .badge');
+    if (favoritesBadge) {
+        const favCount = favorites.length;
+        favoritesBadge.textContent = favCount;
+        favoritesBadge.style.display = favCount > 0 ? 'flex' : 'none';
+    }
+    
     // 已点菜品徽章
     const ordersBadge = document.querySelector('[data-page="orders"] .badge');
     if (ordersBadge) {
@@ -860,19 +882,21 @@ function updateBadges() {
 function switchPage(page) {
     currentPage = page;
     
-    // 更新导航状态
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.toggle('active', item.dataset.page === page);
     });
     
-    // 切换页面内容
     document.querySelectorAll('.page').forEach(p => {
         p.style.display = 'none';
     });
-    document.getElementById(`${page}Page`).style.display = 'block';
     
-    // 滚动到顶部
+    const targetPage = document.getElementById(`${page}Page`);
+    if (targetPage) {
+        targetPage.style.display = 'block';
+    }
+    
     window.scrollTo(0, 0);
+    console.log('切换到页面:', page);
 }
 
 function showToast(message) {
