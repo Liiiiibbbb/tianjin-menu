@@ -138,6 +138,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 160px;
+    pointer-events: auto;
 }
 
 .dish-card:hover {
@@ -161,7 +162,8 @@ body {
     justify-content: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     transition: transform 0.3s;
-    z-index: 10;
+    z-index: 100;
+    pointer-events: auto;
 }
 
 .favorite-btn:active {
@@ -239,6 +241,8 @@ body {
     justify-content: center;
     box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
     flex-shrink: 0;
+    z-index: 100;
+    pointer-events: auto;
 }
 
 .add-to-cart-btn:active {
@@ -302,12 +306,12 @@ body {
 .cart-item {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     background: #fff;
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    gap: 12px;
 }
 
 .cart-item-info {
@@ -327,25 +331,82 @@ body {
     font-weight: 700;
 }
 
-.cart-item-quantity {
+.cart-item-actions {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.quantity-btn {
+.quantity-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.quantity-control button {
     width: 32px;
     height: 32px;
     border: none;
     border-radius: 50%;
     background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
     color: white;
-    font-size: 20px;
+    font-size: 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.2s;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.3);
+}
+
+.quantity-control button:active {
+    transform: scale(0.9);
+}
+
+.quantity-number {
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+    min-width: 24px;
+    text-align: center;
+}
+
+.remove-from-cart {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.3);
+}
+
+.remove-from-cart:active {
+    transform: scale(0.9);
+}
+
+.delete-order {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 20px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.delete-order:hover {
+    background: rgba(255, 107, 107, 0.1);
+}
+
+.delete-order:active {
+    transform: scale(0.9);
 }
 
 .quantity-btn:active {
