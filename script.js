@@ -848,6 +848,13 @@ function checkout() {
     if (confirm(`确认下单吗？\n总计：¥${total}`)) {
         const timestamp = Date.now();
         
+        // 先保存到 Supabase（在清空购物车之前）
+        const ordersToSave = [...cart]; // 复制购物车数据
+        ordersToSave.forEach(item => {
+            addOrderToSupabase(item);
+        });
+        updateCartInSupabase();
+        
         // 先添加到本地订单
         cart.forEach(item => {
             orders.unshift({
@@ -869,12 +876,6 @@ function checkout() {
         
         // 切换到已点菜品页面
         switchPage('orders');
-        
-        // 异步更新到 Supabase
-        cart.forEach(item => {
-            addOrderToSupabase(item);
-        });
-        updateCartInSupabase();
         
         showToast('下单成功！');
     }
