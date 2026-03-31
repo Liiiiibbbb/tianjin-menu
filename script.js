@@ -379,6 +379,19 @@ async function deleteOrderFromSupabase(dishId) {
     }
 }
 
+// 更新订单数量到 Supabase
+async function updateOrderQuantityInSupabase(dishId, newQuantity) {
+    try {
+        await supabaseClient
+            .from('orders')
+            .update({ quantity: newQuantity })
+            .eq('user_id', userId)
+            .eq('dish_id', dishId);
+    } catch (error) {
+        console.error('更新订单数量失败:', error);
+    }
+}
+
 // 清空订单从 Supabase
 async function clearOrdersFromSupabase() {
     try {
@@ -867,9 +880,25 @@ function checkout() {
 }
 
 function deleteOrder(dishId) {
-    orders = orders.filter(order => order.dishId !== dishId);
-    deleteOrderFromSupabase(dishId);
+    // 找到第一个匹配的订单
+    const orderIndex = orders.findIndex(order => order.dishId === dishId);
+    if (orderIndex === -1) return;
+    
+    const order = orders[orderIndex];
+    
+    if (order.quantity > 1) {
+        // 如果数量大于 1，减少数量
+        order.quantity--;
+        // 更新 Supabase 中的数量
+        updateOrderQuantityInSupabase(dishId, order.quantity);
+    } else {
+        // 如果数量等于 1，删除该订单
+        orders.splice(orderIndex, 1);
+        deleteOrderFromSupabase(dishId);
+    }
+    
     renderOrders();
+    updateBadges();
 }
 
 function clearOrders() {
