@@ -565,6 +565,7 @@ function setupGlobalEventListeners() {
         if (e.target.closest('.delete-order')) {
             const btn = e.target.closest('.delete-order');
             const dishId = parseInt(btn.dataset.dishId);
+            console.log('✓ 点击删除订单:', dishId, '按钮:', btn);
             if (!isNaN(dishId)) {
                 deleteOrder(dishId);
             }
