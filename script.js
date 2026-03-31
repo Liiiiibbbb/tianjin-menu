@@ -713,13 +713,20 @@ function increaseQuantity(dishId) {
 
 function renderFavorites() {
     const favoritesGrid = document.getElementById('favoritesGrid');
+    const favoritesEmpty = document.getElementById('favoritesEmpty');
+    
     if (!favoritesGrid) return;
     
     const favoriteDishes = dishesData.filter(dish => favorites.includes(dish.id));
     
     if (favoriteDishes.length === 0) {
-        favoritesGrid.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暂无收藏菜品</div>';
+        // 无收藏：显示空状态
+        if (favoritesEmpty) favoritesEmpty.style.display = 'block';
+        favoritesGrid.style.display = 'none';
     } else {
+        // 有收藏：隐藏空状态，显示列表
+        if (favoritesEmpty) favoritesEmpty.style.display = 'none';
+        favoritesGrid.style.display = 'block';
         favoritesGrid.innerHTML = favoriteDishes.map(dish => createDishCard(dish)).join('');
     }
 }
@@ -752,11 +759,11 @@ function renderCart() {
                 </div>
                 <div class="cart-item-actions">
                     <div class="quantity-control">
-                        <button class="decrease-quantity" data-dish-id="${item.dishId}">-</button>
-                        <span>${item.quantity}</span>
-                        <button class="increase-quantity" data-dish-id="${item.dishId}">+</button>
+                        <button class="decrease-quantity" data-dish-id="${item.dishId}" title="减少">➖</button>
+                        <span class="quantity-number">${item.quantity}</span>
+                        <button class="increase-quantity" data-dish-id="${item.dishId}" title="增加">➕</button>
                     </div>
-                    <button class="remove-from-cart" data-dish-id="${item.dishId}">删除</button>
+                    <button class="remove-from-cart" data-dish-id="${item.dishId}" title="删除">🗑️</button>
                 </div>
             </div>
         `).join('');
@@ -768,11 +775,19 @@ function renderCart() {
 
 function renderOrders() {
     const ordersList = document.getElementById('ordersList');
+    const ordersEmpty = document.getElementById('ordersEmpty');
+    
     if (!ordersList) return;
     
     if (orders.length === 0) {
-        ordersList.innerHTML = '<div style="text-align: center; color: #999; padding: 40px;">暂无点菜记录</div>';
+        // 无订单：显示空状态
+        if (ordersEmpty) ordersEmpty.style.display = 'block';
+        ordersList.style.display = 'none';
     } else {
+        // 有订单：隐藏空状态，显示列表
+        if (ordersEmpty) ordersEmpty.style.display = 'none';
+        ordersList.style.display = 'block';
+        
         const ordersByTime = {};
         orders.forEach(order => {
             const time = new Date(order.timestamp).toLocaleString('zh-CN');
@@ -795,7 +810,9 @@ function renderOrders() {
                                 <div class="order-item-details">¥${order.price} × ${order.quantity}</div>
                             </div>
                             <div class="order-item-price">¥${order.price * order.quantity}</div>
-                            <button class="delete-order" data-dish-id="${order.dishId}">删除</button>
+                            <button class="delete-order" data-dish-id="${order.dishId}" title="删除">
+                                🗑️
+                            </button>
                         </div>
                     `).join('')}
                     <div class="order-group-total">小计：¥${total}</div>
@@ -816,6 +833,8 @@ function checkout() {
     
     if (confirm(`确认下单吗？\n总计：¥${total}`)) {
         const timestamp = Date.now();
+        
+        // 先添加到本地订单
         cart.forEach(item => {
             orders.unshift({
                 dishId: item.dishId,
@@ -824,17 +843,25 @@ function checkout() {
                 quantity: item.quantity,
                 timestamp
             });
-            addOrderToSupabase(item);
         });
         
+        // 清空购物车
         cart = [];
-        updateCartInSupabase();
         
+        // 更新 UI
         renderOrders();
         renderCart();
         updateBadges();
         
+        // 切换到已点菜品页面
         switchPage('orders');
+        
+        // 异步更新到 Supabase
+        cart.forEach(item => {
+            addOrderToSupabase(item);
+        });
+        updateCartInSupabase();
+        
         showToast('下单成功！');
     }
 }
